@@ -2,9 +2,17 @@ import pyautogui as pag
 import cv2
 import numpy as np
 import time
-import keyboard
+from tkinter import Tk, Label
+from PIL import ImageTk, Image
+import threading
+from arrays import *
 
+# Constants
+ORDER_COOLDOWN = 0.1
+last_seen_times = {}
 cordArray = []
+verifiedArray = []
+
 screen = cv2.imread('Images/FullPizza1.png', cv2.IMREAD_UNCHANGED)
 templates = [
     cv2.imread('Images/Pizza1.png', cv2.IMREAD_GRAYSCALE),
@@ -17,17 +25,53 @@ templates = [
 
 
 
-def findOven():
-    pizzaOven = cv2.imread('Images/PizzaOven.jpg', cv2.IMREAD_GRAYSCALE)
+def click(pizzaOven, cordArray):
+    current_time = time.time()
+
+    pag.click(pizzaOven[0], pizzaOven[1])
+    print("Index of penguins:" + str(cordArray))
+
+    for cord in cordArray:
+        time.sleep(0.1)
+        if not cord or len(cord[0]) != 4:
+            continue
+        if cord == []:
+            continue
+        #print("Looking to click:" + str(cord))
+        x, y, w, h = cord[0]
+        x += w // 2
+        y += h // 2
+        y += 100
+
+        coord_key = (x, y)
+
+        #print("Clicking at:", x, y)
+        pag.click(x, y)
+
+def findRetry():
+    retry = cv2.imread('Images/Replay.png', cv2.IMREAD_GRAYSCALE)
     screenshot = pag.screenshot()
-    
+    screen = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+    screen = cv2.cvtColor(screen, cv2.COLOR_BGR2GRAY)
+
+    result = cv2.matchTemplate(screen, retry, cv2.TM_CCOEFF_NORMED)
+    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+    if max_val > 0.6:
+        print("Retry button found at:", max_loc)
+        return max_loc
+    return None
+
+
+def checkFailed():
+    return
+
+def findOven():
+    pizzaOven = cv2.imread('Images/PizzaOvenWin.png', cv2.IMREAD_GRAYSCALE)
+    screenshot = pag.screenshot()
     screen = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
     screen = cv2.cvtColor(screen, cv2.COLOR_BGR2GRAY)
 
     result = cv2.matchTemplate(screen, pizzaOven, cv2.TM_CCOEFF_NORMED)
-    #cv2.imshow('Screen', screen)
-    #cv2.waitKey()
-    
     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
     if max_val > 0.5:
         print("Pizza Oven found at:", max_loc)
@@ -35,133 +79,108 @@ def findOven():
     return None
 
 
-"""
-Returns the order of the penguins in the game in terms of coordinates.
-@return: List of coordinates of the penguins in the game.
-"""
-def read():
-
-    # Takes a screenshot of the screen
-    # Take a screenshot of the screen
+def read(start_time):
+    global cordArray
     screenshot = pag.screenshot()
-    screen = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
-    screen = cv2.cvtColor(screen, cv2.COLOR_BGR2GRAY)
-    
-    #screen = cv2.imread('Images/FullPizza5.png', cv2.IMREAD_UNCHANGED)
-    #screen = cv2.cvtColor(screen, cv2.COLOR_BGR2GRAY)
+    screen = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGR2GRAY)
+
     best_match = None
     best_confidence = 0
     best_location = None
     best_dimensions = None
 
-    # Iterate through the templates
     for template in templates:
         result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
         
         if max_val > best_confidence:
             best_confidence = max_val
-            #best_match = template
             best_location = max_loc
             best_dimensions = (template.shape[1], template.shape[0])
 
-    conf = 0.7
-
-    if best_confidence >= conf: # If the confidence is greater than the threshold
+    conf = 0.8
+    if best_confidence >= conf:
         coordinates = []
         w, h = best_dimensions
         xloc, yloc = best_location
         coordinates.append((xloc, yloc, w, h))
         cv2.rectangle(screen, best_location, (xloc + w, yloc + h), (0, 255, 255), 2)
-        print("Best match location:", best_location)
-        print("Best confidence:", best_confidence)
-        #cv2.imshow('Screen', screen)
-        #cv2.waitKey()  
-        print("Coordinates:", coordinates)
-        return coordinates
-    else: # If no image passes the threshold
-        return []
+        current_time = time.time()
+        elapsed_time = current_time - start_time
+        #print(f"Coordinates at {elapsed_time:.2f} seconds: {coordinates}")
+        cordArray.append(coordinates)
+    else:
+        cordArray.append([])
 
 
-"""
-Clicks on the penguins in the game in the order of the list of coordinates.
-@param: List of the coordinates of the penguins in the game."""
-def click(pizzaOven, cordArray):
-    # 2880 x 1864
-    print("Clicking")
-    pag.click(pizzaOven[0], pizzaOven[1] - 200)
-    print("Cord Array:" + str(cordArray))
-    for cord in cordArray:
-        print("Cord:" + str(cord))
-        if not cord or len(cord[0]) != 4:
-            continue
-        x, y, w, h = cord[0]
-        x += w // 2
-        y += h // 2
-        y += 100
-        print("Clicking at:", x, y)
-        pag.click(x, y)
-        pag.click(1400, 930)
-        time.sleep(0.2)
-
-
-"""
-Runs the read function, and appends the coordinates of the pizza to the list of coordinates, while making sure the same reading
-isn't present twice in a row."""
-def runRead():
-    #global stop_program
-    consecutive_failures = 0
-    max_failed_attempts = 2
-    while consecutive_failures < max_failed_attempts: #and not stop_program
-        print("Attempt number:", consecutive_failures + 1)
-        tempLocation = read()
-        if tempLocation:
-            consecutive_failures = 0
-            if len(cordArray) == 0 or cordArray[-1] != tempLocation:
-                cordArray.append(tempLocation)
-                print(cordArray)
-              # Reset the failure count
-        else:  # If no coordinates are found
-            consecutive_failures += 1
+def call_read_every_n_seconds(n, x, stop_event, start_time):
+    def run():
+        consecutive_empty_returns = 0
+        global cordArray  # Use global cordArray
         
-        #time.sleep(0.05)  # Wait for 0.1 seconds before the next read
-def debug():
-    screenshot = pag.screenshot()
+        while consecutive_empty_returns < x and not stop_event.is_set():
+            start_time_loop = time.time()
+            read(start_time)  # Pass the program start time to read
+            
+            if cordArray and not cordArray[-1]:  # Check the last appended result in cordArray if not empty
+                consecutive_empty_returns += 1
+                #print(f"No match found. Consecutive empty returns: {consecutive_empty_returns}")
+            else:
+                consecutive_empty_returns = 0  # Reset counter if a match is found
+            
+            elapsed_time = time.time() - start_time_loop
+            sleep_time = max(0, n - elapsed_time)
+            time.sleep(sleep_time)
+        
+        #print("Stopping the thread after reaching the maximum consecutive empty returns.")
+        stop_event.set()  # Signal that the thread has finished
 
-    # Convert the screenshot to a format OpenCV can use
-    screenshot_np = np.array(screenshot)
-    screen = cv2.cvtColor(screenshot_np, cv2.COLOR_RGB2BGR)
+    thread = threading.Thread(target=run)
+    thread.daemon = True  # Daemonize thread to allow program to exit even if thread is running
+    thread.start()
+    return thread
 
-    # Print the size of the screenshot
-    height, width, channels = screen.shape
-    print(f"Screenshot size: {width} x {height}")
-
-    # Display the screenshot using OpenCV
-    cv2.imshow('Screenshot', screen)
-    cv2.waitKey(0)  # Wait for a key press to close the window
-    cv2.destroyAllWindows()
 
 def main():
-    stop_key = 'q'
+    global cordArray, verifiedArray  # Declare cordArray as global to modify it inside main
+    cordArray = []  # Initialize cordArray
+    
+    program_start_time = time.time()  # Capture the program's start time
+    
+    # Placeholder for finding the pizza oven
     pizzaOven = None
+
     while pizzaOven is None:
-        print("Finding pizza oven")
         pizzaOven = findOven()
         time.sleep(0.1)
+
+    retryLoc = None
+
+        
     while True:
-        runRead()
-        print(cordArray)
-        if len(cordArray) > 0:
-            click(pizzaOven, cordArray)
-        #if keyboard.is_pressed(stop_key):  # Check if the stop key is pressed
-         #   print(f"Stopped by user pressing '{stop_key}' key.")
-          #  print(cordArray)
-           # break
+        cordArray = []  # Reset cordArray for each run
+        stop_event = threading.Event()
+        call_read_every_n_seconds(0.1, 4, stop_event, program_start_time)
+        while retryLoc is None:
+            retryLoc = findRetry()
+        stop_event.wait()  # Wait for the reading thread to finish
+        cordArray = organize(cordArray)
+        #print("Verified Array:", verifiedArray)
+        #print("Cord Array:", cordArray)
+        if verifiedArray == []:
+            verifiedArray = cordArray
+        else:
+            if len(verifiedArray) == len(cordArray):
+                time.sleep(0.2)
+                pag.click(retryLoc[0] + 30, retryLoc[1] + 30)
+                continue
+            else:
+                verifiedArray.append(cordArray[-1])
+
+        print("Clicking")
+        click(pizzaOven, verifiedArray)
+        print("Thread has stopped. Proceeding with the next iteration.")
+        time.sleep(0.1)  
 
 
-
-def main2():
-    while True:
-        read()
-debug()
-#main()
+main()
